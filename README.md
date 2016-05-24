@@ -7,6 +7,12 @@ Rabbit Order
       IEEE International Parallel and Distributed Processing Symposium (IPDPS),
       2016.
 - Please read `license.txt` before reading or using the files.
+- Note that some graph datasets are already reordered, and so Rabbit Order will
+  not show significant performance improvement on those graphs.
+    - For example, [Laboratory for Web Algorithmics](http://law.di.unimi.it/)
+      reorders graphs using Layered Label Propagation.
+    - Web graphs are sometimes reordered by URL. This ordering is known to show
+      good locality.
 - Now the files are a bit dirty. They will be updated soon. -- May 24, 2016
 
 
