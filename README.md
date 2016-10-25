@@ -13,14 +13,13 @@ Rabbit Order
       reorders graphs using Layered Label Propagation.
     - Web graphs are sometimes reordered by URL. This ordering is known to show
       good locality.
-- Now the files are a bit dirty. They will be updated soon. -- May 24, 2016
 
 
 How to use
 ----------
 
 `demo/reorder.cc` is a sample program to reorder a graph by using Rabbit Order.
-Try `make` in the `demo/` directory and run the program.
+Type `make` in the `demo/` directory to build the program.
 
 ### Requirements
 
@@ -31,4 +30,73 @@ Try `make` in the `demo/` directory and run the program.
 
 Numbers in each parenthesis are the oldest versions that we used to test this
 program.
+
+### Usage
+
+    Usage: reorder [-c] GRAPH_FILE
+      -c    Print community IDs instead of a new ordering
+
+If flag `-c` is given, this program runs in the
+*clustering mode (described later)*; otherwise, it runs in *reordering mode*.
+
+### Input
+
+`GRAPH_FILE` has to be an edge-list file like the following:
+
+    14 10
+    2 194
+    14 1
+    89 20
+    ...
+
+For each line, the first number is a vertex ID of an edge source, and the
+second number is a vertex ID of an edge target.
+Edges do not need to be sorted in some ordering, but **vertex IDs should be
+zero-based contiguous numbers (i.e., 0, 1, 2, ...)**; otherwise, this demo
+program may consume more memory and shows lower performance.
+
+Many edge-list files in this format are found in
+[Stanford Large Network Dataset Collection] (http://snap.stanford.edu/data/index.html).
+
+### Output (reordering mode)
+
+The program prints new ordering as follows:
+
+    8
+    16
+    1
+    4
+    ...
+
+These lines means the following permutation:
+
+    Vertex 8  ==> Vertex 0
+    Vertex 16 ==> Vertex 1
+    Vertex 1  ==> Vertex 2
+    Vertex 4  ==> Vertex 3
+    ...
+
+### Output (clustering mode)
+
+The program prints new ordering as follows:
+
+    1
+    5
+    1
+    5
+    5
+    9
+    ...
+
+These lines means the following classification:
+
+    Vertex 0 ==> Cluster 1
+    Vertex 1 ==> Cluster 5
+    Vertex 2 ==> Cluster 1
+    Vertex 3 ==> Cluster 5
+    Vertex 4 ==> Cluster 5
+    Vertex 5 ==> Cluster 9
+    ...
+
+Note that cluster ID may be non-contiguous.
 
