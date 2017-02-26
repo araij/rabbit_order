@@ -1,7 +1,7 @@
 Rabbit Order
 ============
 
-- This is an implementation of an algorithm proposed in the following paper:
+- This is an implementation of the algorithm proposed in the following paper:
     - J. Arai, H. Shiokawa, T. Yamamuro, M. Onizuka, and S. Iwamura.
       Rabbit Order: Just-in-time Parallel Reordering for Fast Graph Analysis.
       IEEE International Parallel and Distributed Processing Symposium (IPDPS),
@@ -10,7 +10,7 @@ Rabbit Order
 - Note that some graph datasets are already reordered, and so Rabbit Order will
   not show significant performance improvement on those graphs.
     - For example, [Laboratory for Web Algorithmics](http://law.di.unimi.it/)
-      reorders graphs using Layered Label Propagation.
+      reorders graphs using the Layered Label Propagation algorithm.
     - Web graphs are sometimes reordered by URL. This ordering is known to show
       good locality.
 
@@ -18,7 +18,8 @@ Rabbit Order
 How to use
 ----------
 
-`demo/reorder.cc` is a sample program to reorder a graph by using Rabbit Order.
+`demo/reorder.cc` is a sample program that reorders graphs by using Rabbit
+Order.
 Type `make` in the `demo/` directory to build the program.
 
 ### Requirements
@@ -36,8 +37,8 @@ program.
     Usage: reorder [-c] GRAPH_FILE
       -c    Print community IDs instead of a new ordering
 
-If flag `-c` is given, this program runs in the
-*clustering mode (described later)*; otherwise, it runs in *reordering mode*.
+If flag `-c` is given, this program runs in the *clustering mode*
+(described later); otherwise, it runs in the *reordering mode*.
 
 ### Input
 
@@ -49,18 +50,19 @@ If flag `-c` is given, this program runs in the
     89 20
     ...
 
-For each line, the first number is a vertex ID of an edge source, and the
-second number is a vertex ID of an edge target.
-Edges do not need to be sorted in some ordering, but **vertex IDs should be
+Each line represents an edge.
+The first number is a source vertex ID, and the second number is a target
+vertex ID.
+Edges do not need to be sorted in some orderings, but **vertex IDs should be
 zero-based contiguous numbers (i.e., 0, 1, 2, ...)**; otherwise, this demo
-program may consume more memory and shows lower performance.
+program may consume more memory and show lower performance.
 
 Many edge-list files in this format are found in
 [Stanford Large Network Dataset Collection] (http://snap.stanford.edu/data/index.html).
 
 ### Output (reordering mode)
 
-The program prints new ordering as follows:
+The program prints a new ordering as follows:
 
     8
     16
@@ -68,7 +70,7 @@ The program prints new ordering as follows:
     4
     ...
 
-These lines means the following permutation:
+These lines represent the following permutation:
 
     Vertex 8  ==> Vertex 0
     Vertex 16 ==> Vertex 1
@@ -78,7 +80,7 @@ These lines means the following permutation:
 
 ### Output (clustering mode)
 
-The program prints new ordering as follows:
+The program prints a clustering result as follows:
 
     1
     5
@@ -88,7 +90,7 @@ The program prints new ordering as follows:
     9
     ...
 
-These lines means the following classification:
+These lines represent the following classification:
 
     Vertex 0 ==> Cluster 1
     Vertex 1 ==> Cluster 5
@@ -98,5 +100,5 @@ These lines means the following classification:
     Vertex 5 ==> Cluster 9
     ...
 
-Note that cluster ID may be non-contiguous.
+Note that the cluster IDs may be non-contiguous.
 
