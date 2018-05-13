@@ -72,10 +72,10 @@ The program prints a new ordering as follows:
 
 These lines represent the following permutation:
 
-    Vertex 8  ==> Vertex 0
-    Vertex 16 ==> Vertex 1
-    Vertex 1  ==> Vertex 2
-    Vertex 4  ==> Vertex 3
+    Vertex 0 ==> Vertex 8
+    Vertex 1 ==> Vertex 16
+    Vertex 2 ==> Vertex 1
+    Vertex 3 ==> Vertex 4
     ...
 
 ### Output (clustering mode)
