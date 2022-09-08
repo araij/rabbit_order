@@ -8,6 +8,10 @@
 #include <boost/range/algorithm/count.hpp>
 #include "../rabbit_order.hpp"
 #include "edge_list.hpp"
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <ostream>
 
 using rabbit_order::vint;
 typedef std::vector<std::vector<std::pair<vint, float> > > adjacency_list;
@@ -180,7 +184,7 @@ void detect_community(adjacency_list adj) {
   std::cerr << "Modularity: " << q << std::endl;
 }
 
-void reorder(adjacency_list adj) {
+void reorder(adjacency_list adj, std::string output_path, uint64_t m) {
   std::cerr << "Generating a permutation...\n";
   const double tstart = rabbit_order::now_sec();
   //--------------------------------------------
@@ -189,28 +193,35 @@ void reorder(adjacency_list adj) {
   //--------------------------------------------
   std::cerr << "Runtime for permutation generation [sec]: "
             << rabbit_order::now_sec() - tstart << std::endl;
-
+  std::ofstream rbt_outfile(output_path);
+  rbt_outfile << g.n() << "\n";
+  rbt_outfile << m << "\n";
+  for (vint i = 0; i < g.n(); ++i) {
+    rbt_outfile << i << " " << p[i] << "\n";
+  }
   // Print the result
-  std::copy(&p[0], &p[g.n()], std::ostream_iterator<vint>(std::cout, "\n"));
+  // std::copy(&p[0], &p[g.n()], std::ostream_iterator<vint>(std::cout, "\n"));
 }
 
 int main(int argc, char* argv[]) {
   using boost::adaptors::transformed;
 
   // Parse command-line arguments
-  if (argc != 2 && (argc != 3 || std::string("-c") != argv[1])) {
+  if (argc != 3 && (argc != 3 || std::string("-c") != argv[1])) {
     std::cerr << "Usage: reorder [-c] GRAPH_FILE\n"
               << "  -c    Print community IDs instead of a new ordering\n";
     exit(EXIT_FAILURE);
   }
-  const std::string graphpath = argc == 3 ? argv[2] : argv[1];
-  const bool        commode   = argc == 3;
+  // const std::string graphpath = argc == 3 ? argv[2] : argv[1];
+  const bool        commode   = false;
+  std::string graphpath = argv[1];
+  std::string output_path = argv[2];
 
   std::cerr << "Number of threads: " << omp_get_max_threads() << std::endl;
 
   std::cerr << "Reading an edge-list file: " << graphpath << std::endl;
   auto       adj = read_graph(graphpath);
-  const auto m   =
+  const uint64_t m   =
       boost::accumulate(adj | transformed([](auto& es) {return es.size();}),
                         static_cast<size_t>(0));
   std::cerr << "Number of vertices: " << adj.size() << std::endl;
@@ -219,7 +230,7 @@ int main(int argc, char* argv[]) {
   if (commode)
     detect_community(std::move(adj));
   else
-    reorder(std::move(adj));
+    reorder(std::move(adj), output_path, m);
 
   return EXIT_SUCCESS;
 }
