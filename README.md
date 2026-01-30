@@ -58,7 +58,7 @@ zero-based contiguous numbers (i.e., 0, 1, 2, ...)**; otherwise, this demo
 program may consume more memory and show lower performance.
 
 Many edge-list files in this format are found in
-[Stanford Large Network Dataset Collection] (http://snap.stanford.edu/data/index.html).
+[Stanford Large Network Dataset Collection](http://snap.stanford.edu/data/index.html).
 
 ### Output (reordering mode)
 
