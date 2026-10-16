@@ -18,16 +18,19 @@
 #include <memory>
 #include <unordered_set>
 #include <parallel/algorithm>
-#include <boost/algorithm/cxx11/all_of.hpp>
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <deque>
+#include <iterator>
+#include <limits>
+#include <numeric>
+#include <optional>
+#include <type_traits>
+#include <vector>
 #include <boost/atomic.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm/count_if.hpp>
-#include <boost/range/algorithm/remove_if.hpp>
-#include <boost/range/algorithm/sort.hpp>
-#include <boost/range/algorithm/unique.hpp>
-#include <boost/range/irange.hpp>
-#include <boost/range/numeric.hpp>
 
 //
 // Output stream for fatal errors.
@@ -242,7 +245,7 @@ std::vector<T> join(const std::vector<std::deque<T> >& xss) {
 
   std::vector<T> ys;
   ys.reserve(len);
-  for (auto& xs : xss) boost::copy(xs, std::back_inserter(ys));
+  for (auto& xs : xss) std::copy(xs.begin(), xs.end(), std::back_inserter(ys));
   return ys;
 }
 
@@ -292,7 +295,7 @@ struct graph {
   unique_c_ptr<vertex[]>              vs;       // Vertex ID -> attributes
   std::vector<std::vector<edge> >     es;       // Vertex ID -> edges
   double                              tot_wgt;  // Total weight of all edges
-  boost::optional<std::vector<vint> > tops;     // Top-level vertices (result)
+  std::optional<std::vector<vint> > tops;     // Top-level vertices (result)
 
   // Counters for performance analysis
   atomix<size_t> n_reunite;    // # of calls of `unite()` after the lock
@@ -570,7 +573,7 @@ graph aggregate(std::vector<std::vector<edge> > adj) {
 
     #pragma omp for schedule(static, 1)
     for (vint i = 0; i < g.n(); ++i) {
-      pends.erase(boost::remove_if(pends, [&g, &tops, &nbrs](auto w) {
+      pends.erase(std::remove_if(pends.begin(), pends.end(), [&g, &tops, &nbrs](auto w) {
         const vint u = merge(w, &nbrs, &g);
         if (u == w) tops.push_back(w);
         return u != vmax;  // remove if the merge successed
@@ -604,7 +607,9 @@ graph aggregate(std::vector<std::vector<edge> > adj) {
   // `tops` does not have duplicated elements
   assert(([&g]() {
     auto tops = *g.tops;
-    return g.tops->size() == boost::size(boost::unique(boost::sort(tops)));
+    std::sort(tops.begin(), tops.end());
+    return g.tops->size() == static_cast<size_t>(
+        std::unique(tops.begin(), tops.end()) - tops.begin());
   })());
 
   //std::cerr << "CPU time utilization rate: " <<  ttotal / (tmax * np)
@@ -655,7 +660,7 @@ std::unique_ptr<vint[]> compute_perm(const graph& g) {
     }
   }
 
-  boost::partial_sum(offsets, offsets.begin());
+  std::partial_sum(offsets.begin(), offsets.end(), offsets.begin());
   assert(offsets.back() == g.n());
 
   #pragma omp parallel for schedule(static)
@@ -665,8 +670,10 @@ std::unique_ptr<vint[]> compute_perm(const graph& g) {
   // `perm` must contain `[0, g.n())`
   assert(([&g, &perm]() {
     std::vector<vint> sorted(&perm[0], &perm[g.n()]);
-    return boost::equal(boost::sort(sorted),
-                        boost::irange(static_cast<vint>(0), g.n()));
+    std::sort(sorted.begin(), sorted.end());
+    for (vint v = 0; v < g.n(); ++v)
+      if (sorted[v] != v) return false;
+    return true;
   })());
 
   return perm;
@@ -704,7 +711,6 @@ bool check_result(graph* const pg) {
 
 #ifndef NDEBUG
   auto&      g     = *pg;
-  const auto vall  = boost::irange(static_cast<vint>(0), g.n());
   const auto istop = [&g](const vint v) {return is_toplevel(g, v);};
 
   // For all vertex `v`, `trace_com(v)` is in `g.tops`
@@ -713,25 +719,36 @@ bool check_result(graph* const pg) {
     for (vint v = 0; v < g.n(); ++v) topids.insert(trace_com(v, &g));
     std::vector<vint> got(topids.begin(), topids.end());
     auto              ans = *g.tops;
-    assert(boost::equal(boost::sort(ans), boost::sort(got)));
+    std::sort(ans.begin(), ans.end());
+    std::sort(got.begin(), got.end());
+    assert(std::equal(ans.begin(), ans.end(), got.begin(), got.end()));
   }
 
   // `g.tops` includes only top-level vertices
-  assert(boost::algorithm::all_of(*g.tops, istop));
+  assert(std::all_of(g.tops->begin(), g.tops->end(), istop));
   // The number of the top-level vertices is equal to the size of `g.tops`,
   // i.e., `g.tops` includes all the top-level vertices
-  assert(boost::count_if(vall, istop) == static_cast<intmax_t>(g.tops->size()));
+  assert(([&g, &istop]() {
+    intmax_t count = 0;
+    for (vint v = 0; v < g.n(); ++v)
+      if (istop(v)) ++count;
+    return count == static_cast<intmax_t>(g.tops->size());
+  })());
 
   // All the remaining communities are top-level
-  assert(boost::algorithm::all_of(vall, [&g](auto v) {
-    const vint c = trace_com(v, &g);
-    return is_toplevel(g, c);
-  }));
+  assert(([&g]() {
+    for (vint v = 0; v < g.n(); ++v) {
+      if (!is_toplevel(g, trace_com(v, &g))) return false;
+    }
+    return true;
+  })());
 
   // Every vertex `v` is consistent as a top-level vertex or a merged vertex
-  assert(boost::algorithm::all_of(vall, [&g](auto v) {
-    return is_toplevel(g, v) || is_merged(g, v);
-  }));
+  assert(([&g]() {
+    for (vint v = 0; v < g.n(); ++v)
+      if (!(is_toplevel(g, v) || is_merged(g, v))) return false;
+    return true;
+  })());
 #endif
 
   return true;
