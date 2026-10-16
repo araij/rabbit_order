@@ -30,7 +30,7 @@
 #include <optional>
 #include <type_traits>
 #include <vector>
-#include <boost/atomic.hpp>
+#include <cstring>
 
 //
 // Output stream for fatal errors.
@@ -159,34 +159,229 @@ numa_unique_ptr<T> make_unique_interleaved(const size_t n) {
 }
 
 //------------------------------------------------------------------------------
-// Customized boost::atomic
-// - Uses `accuire`, `release`, and `acq_rel` as a default memory_order
+// Minimal Boost.Atomic 1.58 compiler-intrinsic backend for Rabbit Order.
+//
+// Adapted from boost/memory_order.hpp and boost/atomic/detail/{casts,
+// atomic_template,ops_gcc_atomic,storage_type}.hpp.
+// Copyright (c) 2008, 2009 Peter Dimov
+// Copyright (c) 2009, 2011 Helge Bahmann
+// Copyright (c) 2012, 2013 Tim Blechmann
+// Copyright (c) 2013, 2014 Andrey Semashev
+// Distributed under the Boost Software License, Version 1.0.
+// See boost_atomic_license.txt or https://www.boost.org/LICENSE_1_0.txt.
+//
+// This deliberately preserves the original representation and compiler barriers,
+// including atomix's overlapping whole-word/subword accesses below. It does not
+// repair the original C++ object-lifetime/aliasing assumptions. Keep the volatile
+// accesses, intrinsic arguments and payload-copy boundaries: changing them can
+// change generated code and the caller's inlining decisions.
+//------------------------------------------------------------------------------
+#if !defined(__GNUC__) || !defined(__ATOMIC_RELAXED)
+#error "Rabbit Order's atomic backend requires GCC or Clang atomic builtins"
+#endif
+
+enum memory_order {
+  memory_order_relaxed = 0,
+  memory_order_consume = 1,
+  memory_order_acquire = 2,
+  memory_order_release = 4,
+  memory_order_acq_rel = 6,
+  memory_order_seq_cst = 14
+};
+
+namespace atomic_detail {
+
+__attribute__((always_inline)) inline constexpr memory_order
+failure_order(memory_order order) noexcept {
+  return order == memory_order_acq_rel ? memory_order_acquire :
+      (order == memory_order_release ? memory_order_relaxed : order);
+}
+
+template<typename To, typename From>
+__attribute__((always_inline)) inline To memcpy_cast(const From& from) noexcept {
+  struct {To to;} value = {};
+  std::memcpy(&reinterpret_cast<char&>(value.to),
+              &reinterpret_cast<const char&>(from),
+              sizeof(From) < sizeof(To) ? sizeof(From) : sizeof(To));
+  return value.to;
+}
+
+__attribute__((always_inline)) inline constexpr int
+builtin_order(memory_order order) noexcept {
+  return order == memory_order_relaxed ? __ATOMIC_RELAXED :
+      (order == memory_order_consume ? __ATOMIC_CONSUME :
+      (order == memory_order_acquire ? __ATOMIC_ACQUIRE :
+      (order == memory_order_release ? __ATOMIC_RELEASE :
+      (order == memory_order_acq_rel ? __ATOMIC_ACQ_REL : __ATOMIC_SEQ_CST))));
+}
+
+template<typename T>
+struct builtin_operations {
+  using storage_type = T;
+  __attribute__((always_inline)) static inline void
+  store(volatile T& storage, T value, memory_order order) noexcept {
+    __atomic_store_n(&storage, value, builtin_order(order));
+  }
+  __attribute__((always_inline)) static inline T
+  load(const volatile T& storage, memory_order order) noexcept {
+    return __atomic_load_n(&storage, builtin_order(order));
+  }
+  __attribute__((always_inline)) static inline T
+  fetch_add(volatile T& storage, T value, memory_order order) noexcept {
+    return __atomic_fetch_add(&storage, value, builtin_order(order));
+  }
+  __attribute__((always_inline)) static inline T
+  exchange(volatile T& storage, T value, memory_order order) noexcept {
+    return __atomic_exchange_n(&storage, value, builtin_order(order));
+  }
+  __attribute__((always_inline)) static inline bool
+  compare_exchange_weak(volatile T& storage, T& expected, T desired,
+                        memory_order success, memory_order failure) noexcept {
+    return __atomic_compare_exchange_n(&storage, &expected, desired, true,
+                                       builtin_order(success), builtin_order(failure));
+  }
+  __attribute__((always_inline)) static inline bool
+  is_lock_free(const volatile T& storage) noexcept {
+    return __atomic_is_lock_free(sizeof(T), &storage);
+  }
+};
+
+template<size_t Size, bool Signed>
+struct operations : builtin_operations<std::conditional_t<Size == 4,
+    std::conditional_t<Signed, int32_t, uint32_t>,
+    std::conditional_t<Signed, int64_t, uint64_t>>> {
+  static_assert(Size == 4 || Size == 8, "only 32/64-bit atomics are used");
+  static_assert(__atomic_always_lock_free(Size, nullptr), "lock-free atomics required");
+};
+
+template<typename T, bool Integral> class atomic_base;
+
+template<typename T>
+class atomic_base<T, true> {
+  using ops = operations<sizeof(T), std::is_signed<T>::value>;
+protected:
+  using value_arg_type = T;
+public:
+  using storage_type = typename ops::storage_type;
+protected:
+  storage_type m_storage;
+public:
+  atomic_base() = default;
+  constexpr explicit atomic_base(T value) noexcept : m_storage(value) {}
+  __attribute__((always_inline)) inline void store(T value, memory_order order) volatile noexcept {
+    assert(order != memory_order_consume && order != memory_order_acquire && order != memory_order_acq_rel);
+    ops::store(m_storage, static_cast<storage_type>(value), order);
+  }
+  __attribute__((always_inline)) inline T load(memory_order order) const volatile noexcept {
+    assert(order != memory_order_release && order != memory_order_acq_rel);
+    return static_cast<T>(ops::load(m_storage, order));
+  }
+  __attribute__((always_inline)) inline T fetch_add(T value, memory_order order) volatile noexcept {
+    return static_cast<T>(ops::fetch_add(m_storage, static_cast<storage_type>(value), order));
+  }
+  __attribute__((always_inline)) inline T exchange(T value, memory_order order) volatile noexcept {
+    return static_cast<T>(ops::exchange(m_storage, static_cast<storage_type>(value), order));
+  }
+  __attribute__((always_inline)) inline bool compare_exchange_weak(
+      T& expected, T desired, memory_order success, memory_order failure) volatile noexcept {
+    assert(failure != memory_order_release && failure != memory_order_acq_rel);
+    assert((failure & 15u) <= (success & 15u));
+    storage_type old = static_cast<storage_type>(expected);
+    const bool result = ops::compare_exchange_weak(m_storage, old, static_cast<storage_type>(desired), success, failure);
+    expected = static_cast<T>(old);
+    return result;
+  }
+  __attribute__((always_inline)) inline bool compare_exchange_weak(
+      T& expected, T desired, memory_order order) volatile noexcept {
+    return compare_exchange_weak(expected, desired, order, failure_order(order));
+  }
+  __attribute__((always_inline)) inline bool is_lock_free() const volatile noexcept {
+    return ops::is_lock_free(m_storage);
+  }
+};
+
+template<typename T>
+class atomic_base<T, false> {
+  using ops = operations<sizeof(T), false>;
+protected:
+  using value_arg_type = const T&;
+public:
+  using storage_type = typename ops::storage_type;
+protected:
+  storage_type m_storage;
+public:
+  __attribute__((always_inline)) explicit atomic_base(const T& value = T()) noexcept
+      : m_storage(memcpy_cast<storage_type>(value)) {}
+  __attribute__((always_inline)) inline void store(T value, memory_order order) volatile noexcept {
+    assert(order != memory_order_consume && order != memory_order_acquire && order != memory_order_acq_rel);
+    ops::store(m_storage, memcpy_cast<storage_type>(value), order);
+  }
+  __attribute__((always_inline)) inline T load(memory_order order) const volatile noexcept {
+    assert(order != memory_order_release && order != memory_order_acq_rel);
+    return memcpy_cast<T>(ops::load(m_storage, order));
+  }
+  __attribute__((always_inline)) inline T exchange(T value, memory_order order) volatile noexcept {
+    return memcpy_cast<T>(ops::exchange(m_storage, memcpy_cast<storage_type>(value), order));
+  }
+  __attribute__((always_inline)) inline bool compare_exchange_weak(
+      T& expected, T desired, memory_order success, memory_order failure) volatile noexcept {
+    assert(failure != memory_order_release && failure != memory_order_acq_rel);
+    assert((failure & 15u) <= (success & 15u));
+    storage_type old = memcpy_cast<storage_type>(expected);
+    const bool result = ops::compare_exchange_weak(m_storage, old, memcpy_cast<storage_type>(desired), success, failure);
+    expected = memcpy_cast<T>(old);
+    return result;
+  }
+  __attribute__((always_inline)) inline bool compare_exchange_weak(
+      T& expected, T desired, memory_order order) volatile noexcept {
+    return compare_exchange_weak(expected, desired, order, failure_order(order));
+  }
+  __attribute__((always_inline)) inline bool is_lock_free() const volatile noexcept {
+    return ops::is_lock_free(m_storage);
+  }
+  atomic_base(const atomic_base&) = delete;
+  atomic_base& operator=(const atomic_base&) = delete;
+};
+} // namespace atomic_detail
+
+template<typename T>
+class atomic : public atomic_detail::atomic_base<T, std::is_integral<T>::value> {
+  using base_type = atomic_detail::atomic_base<T, std::is_integral<T>::value>;
+  using value_arg_type = typename base_type::value_arg_type;
+public:
+  atomic() = default;
+  __attribute__((always_inline)) explicit constexpr atomic(value_arg_type value) noexcept : base_type(value) {}
+  atomic(const atomic&) = delete;
+  atomic& operator=(const atomic&) = delete;
+};
+
+//------------------------------------------------------------------------------
+// Copyable wrapper matching the original Boost.Atomic interface
+// - Uses `acquire`, `release`, and `acq_rel` as a default memory_order
 // - Has a default constructor and a copy constructor
 // - Allows access to the internal value by reference
 //------------------------------------------------------------------------------
 template<typename T>
 union atomix {
-  // `std::atomic<T>` requires (and checks) that `T` is TriviallyCopyable, and
-  // hence we resort to use `boost::atomic<T>` instead.
-  boost::atomic<T> a;
+  atomic<T>        a;
   T                raw;
 
   atomix()                   : a(T())               {}
   atomix(const atomix<T>& x) : a(static_cast<T>(x)) {}
   atomix(T x)                : a(x)                 {}
 
-  operator T() const {return a.load(boost::memory_order_acquire);}
-  T fetch_add(T x) {return a.fetch_add(x, boost::memory_order_acq_rel);}
-  T exchange(T x) {return a.exchange(x, boost::memory_order_acq_rel);}
+  operator T() const {return a.load(memory_order_acquire);}
+  T fetch_add(T x) {return a.fetch_add(x, memory_order_acq_rel);}
+  T exchange(T x) {return a.exchange(x, memory_order_acq_rel);}
 
   bool compare_exchange_weak(T& exp, T x)
-      {return a.compare_exchange_weak(exp, x, boost::memory_order_acq_rel);}
+      {return a.compare_exchange_weak(exp, x, memory_order_acq_rel);}
   atomix& operator=(const atomix<T>& x)
-      {a.store(x, boost::memory_order_release); return *this;}
+      {a.store(x, memory_order_release); return *this;}
   atomix& operator=(T x)
-      {a.store(x, boost::memory_order_release); return *this;}
+      {a.store(x, memory_order_release); return *this;}
 
-  // Direct access to the value in the boost::atomic
+  // Direct access to the value in atomic
   const T* operator->() const {
     assert(sizeof(*this) == sizeof(T) && a.is_lock_free());
 
