@@ -168,7 +168,7 @@ numa_unique_ptr<T> make_unique_interleaved(const size_t n) {
 // Copyright (c) 2012, 2013 Tim Blechmann
 // Copyright (c) 2013, 2014 Andrey Semashev
 // Distributed under the Boost Software License, Version 1.0.
-// See boost_atomic_license.txt or https://www.boost.org/LICENSE_1_0.txt.
+// See work_summary.md or https://www.boost.org/LICENSE_1_0.txt.
 //
 // This deliberately preserves the original representation and compiler barriers,
 // including atomix's overlapping whole-word/subword accesses below. It does not

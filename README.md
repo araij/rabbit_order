@@ -24,13 +24,17 @@ Type `make` in the `demo/` directory to build the program.
 
 ### Requirements
 
-- g++ (4.9.2)
-- Boost C++ library (1.58.0)
+- A C++17 compiler with GCC atomic builtins and lock-free 32/64-bit atomics
+  (tested on x86-64 with g++ 15.2 and clang++ 21.1; no Boost installation needed)
+- GNU Make and OpenMP (including libomp when using clang++)
 - libnuma (2.0.9)
 - libtcmalloc\_minimal in google-perftools (2.1)
 
-Numbers in each parenthesis are the oldest versions that we used to test this
-program.
+The libnuma and libtcmalloc_minimal version numbers are the oldest versions
+used to test this program. To select Clang, use `make CXX=clang++`.
+
+The embedded atomic backend is derived from Boost.Atomic 1.58; its license
+is included in `work_summary.md` (the Boost Software License section).
 
 ### Usage
 
