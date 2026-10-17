@@ -11,6 +11,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <unordered_map>
+#include <cctype>
+#include <cerrno>
+#include <cstring>
+#include <tuple>
 #include "../rabbit_order.hpp"
 
 namespace edge_list {
@@ -154,7 +158,7 @@ std::vector<edge> read(const std::string& path) {
   std::vector<edge> edges(eheads.back());
   #pragma omp parallel for schedule(guided, 1)
   for (int t = 0; t < nthread; ++t)
-    boost::copy(eparts[t], edges.begin() + eheads[t]);
+    std::copy(eparts[t].begin(), eparts[t].end(), edges.begin() + eheads[t]);
 
   return edges;
 }

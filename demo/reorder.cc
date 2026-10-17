@@ -4,8 +4,8 @@
 // Author: ARAI Junya <arai.junya@lab.ntt.co.jp> <araijn@gmail.com>
 //
 
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/range/algorithm/count.hpp>
+#include <tuple>
+#include <unordered_map>
 #include "../rabbit_order.hpp"
 #include "edge_list.hpp"
 
@@ -18,7 +18,7 @@ vint count_unused_id(const vint n, const std::vector<edge_list::edge>& edges) {
     appears[std::get<0>(edges[i])] = true;
     appears[std::get<1>(edges[i])] = true;
   }
-  return static_cast<vint>(boost::count(appears, false));
+  return static_cast<vint>(std::count(appears.begin(), appears.end(), false));
 }
 
 template<typename RandomAccessRange>
@@ -26,9 +26,9 @@ adjacency_list make_adj_list(const vint n, const RandomAccessRange& es) {
   using std::get;
 
   // Symmetrize the edge list and remove self-loops simultaneously
-  std::vector<edge_list::edge> ss(boost::size(es) * 2);
+  std::vector<edge_list::edge> ss(es.size() * 2);
   #pragma omp parallel for
-  for (size_t i = 0; i < boost::size(es); ++i) {
+  for (size_t i = 0; i < es.size(); ++i) {
     auto& e = es[i];
     if (get<0>(e) != get<1>(e)) {
       ss[i * 2    ] = std::make_tuple(get<0>(e), get<1>(e), get<2>(e));
@@ -94,7 +94,7 @@ adjacency_list read_graph(const std::string& graphpath) {
 
   // The number of vertices = max vertex ID + 1 (assuming IDs start from zero)
   const auto n =
-      boost::accumulate(edges, static_cast<vint>(0), [](vint s, auto& e) {
+      std::accumulate(edges.begin(), edges.end(), static_cast<vint>(0), [](vint s, auto& e) {
           return std::max(s, std::max(std::get<0>(e), std::get<1>(e)) + 1);});
 
   if (const size_t c = count_unused_id(n, edges)) {
@@ -109,7 +109,8 @@ template<typename InputIt>
 typename std::iterator_traits<InputIt>::difference_type
 count_uniq(const InputIt f, const InputIt l) {
   std::vector<typename std::iterator_traits<InputIt>::value_type> ys(f, l);
-  return boost::size(boost::unique(boost::sort(ys)));
+  std::sort(ys.begin(), ys.end());
+  return std::unique(ys.begin(), ys.end()) - ys.begin();
 }
 
 double compute_modularity(const adjacency_list& adj, const vint* const coms) {
@@ -195,7 +196,6 @@ void reorder(adjacency_list adj) {
 }
 
 int main(int argc, char* argv[]) {
-  using boost::adaptors::transformed;
 
   // Parse command-line arguments
   if (argc != 2 && (argc != 3 || std::string("-c") != argv[1])) {
@@ -211,8 +211,8 @@ int main(int argc, char* argv[]) {
   std::cerr << "Reading an edge-list file: " << graphpath << std::endl;
   auto       adj = read_graph(graphpath);
   const auto m   =
-      boost::accumulate(adj | transformed([](auto& es) {return es.size();}),
-                        static_cast<size_t>(0));
+      std::accumulate(adj.begin(), adj.end(), size_t(0),
+                      [](size_t sum, const auto& es) {return sum + es.size();});
   std::cerr << "Number of vertices: " << adj.size() << std::endl;
   std::cerr << "Number of edges: "    << m          << std::endl;
 

@@ -4,7 +4,7 @@ CXXFLAGS += -Wall -Wextra -Wcast-align -Wcast-qual -Wconversion -Wfloat-equal \
 	    -Wswitch-default -Wuninitialized -Wwrite-strings \
 	    -Wno-sign-conversion -Wno-unused-function \
             -Wno-missing-declarations \
-            -fopenmp -std=c++14 -mcx16 -O3 -DNDEBUG 
+            -fopenmp -std=c++17 -mcx16 -O3 -DNDEBUG
 LDLIBS   += -ltcmalloc_minimal -lnuma
 TARGETS   = reorder
 
